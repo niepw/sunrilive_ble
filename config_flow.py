@@ -21,7 +21,6 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
                 type=TextSelectorType.TEXT,
                 multiple=False,
                 multiline=True,
-                placeholder="AA:BB:CC:DD:EE:FF\n01:23:45:67:89:AB",
             )
         ),
     }
