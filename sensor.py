@@ -1,4 +1,4 @@
-"""Sunrilive BLE Temperature & Humidity sensor entities."""
+import logging  # 這個一定要加
 
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ from homeassistant.const import (
 from homeassistant.core import callback, HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.typing import ConfigType
+from homeassistant.helpers import device_registry as dr
 
 from .const import DOMAIN, MANUFACTURER, MODEL, uid_from_mac
 from .__init__ import SunriliveBleRuntimeData
@@ -31,7 +32,6 @@ if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
-
 
 def _parse_adv(data: bytes) -> tuple[float | None, int | None]:
     """解析 Sunrilive ADV data，回傳 (temp, humid) 或 None."""
