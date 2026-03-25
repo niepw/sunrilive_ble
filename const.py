@@ -4,7 +4,6 @@ DOMAIN = "sunrilive_ble"
 VERSION = "0.1.0"
 MANUFACTURER = "Sunrilive / Tuya"
 MODEL = "XL0801_BLE"
-
 CONF_MANUAL_MACS = "manual_macs"
 
 # 用 UUID 降低重複

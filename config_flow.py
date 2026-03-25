@@ -13,6 +13,7 @@ import voluptuous as vol
 
 from .const import CONF_MANUAL_MACS, DOMAIN, MANUFACTURER, MODEL
 
+
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_MANUAL_MACS, default=""): TextSelector(
