@@ -50,12 +50,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # 如果你之後加 HA 自動 Discovery，也可以在這裡額外加
     # 例如：從 passive BLE 事件裡拿到地址，再加進 list
 
-    async for_macs in (manual_addresses,):
-        for addr in for_macs:
-            uid = uid_from_mac(addr)
-            runtime_data.address_to_mac[addr] = addr
-            # 會在 `async_setup_platform` + `sensor` 裡，用 `BluetoothServiceInfoBleak` 事件綁定
-            # 這邊先只做資料結構管理
+    # 用普通 for 迭代，而不是 async for
+    for addr in manual_addresses:
+        uid = uid_from_mac(addr)
+        runtime_data.address_to_mac[addr] = addr
+        # 會在 `async_setup_platform` + `sensor` 裡，用 `BluetoothServiceInfoBleak` 事件綁定
+        # 這邊先只做資料結構管理
 
     # forward entry
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
