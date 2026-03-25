@@ -1,6 +1,6 @@
-import logging  # 這個一定要加
-
 from __future__ import annotations
+
+import logging  # 這個一定要加
 
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
