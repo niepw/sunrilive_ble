@@ -66,7 +66,8 @@ class SunriliveBLESensor(SensorEntity):
         raise NotImplementedError
 
     def _push_update(self) -> None:
-        self.async_write_ha_state()
+        if self.hass is not None:
+            self.async_write_ha_state()
 
 
 class TempSensor(SunriliveBLESensor):
