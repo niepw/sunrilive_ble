@@ -34,12 +34,9 @@ def _parse_manufacturer_payload(payload: bytes) -> tuple[float, int] | None:
     
     格式：[01][09][TT_hi][TT_lo][HH][MAC 6 bytes] = 共 11 bytes
     """
-    _LOGGER.debug("Parsing manufacturer payload: %s", payload.hex())
     if len(payload) < 5:
-        _LOGGER.debug("Payload too short: %s", payload.hex())
         return None
     if payload[0:2] != bytes([0x01, 0x09]):
-        _LOGGER.debug("Invalid manufacturer ID: %s", payload.hex())
         return None
 
     temp_raw = (payload[2] << 8) | payload[3]
