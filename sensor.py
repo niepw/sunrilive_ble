@@ -14,6 +14,7 @@ from homeassistant.components.bluetooth.passive_update_coordinator import Passiv
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
+    SensorEntityDescription,
     SensorStateClass,
 )
 from homeassistant.const import (
@@ -37,6 +38,23 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 UPDATE_INTERVAL = 60  # seconds, 這個只是示意，實際上我們是被廣播觸發更新的，不需要定時器
+
+TEMPERATURE_SENSOR = SensorEntityDescription(
+    key="temperature",
+    device_class=SensorDeviceClass.TEMPERATURE,
+    native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+    state_class=SensorStateClass.MEASUREMENT,
+    name="Temperature",
+)
+
+HUMIDITY_SENSOR = SensorEntityDescription(
+    key="humidity",
+    device_class=SensorDeviceClass.HUMIDITY,
+    native_unit_of_measurement=PERCENTAGE,
+    state_class=SensorStateClass.MEASUREMENT,
+    name="Humidity",
+)
+
 
 def _parse_adv(data: bytes) -> tuple[float | None, int | None] | None:
     """解析 Sunrilive ADV data，回傳 (temp, humid) 或 None."""
@@ -118,15 +136,13 @@ class SunriliveSensorBase(PassiveBluetoothProcessorEntity, SensorEntity):
 class TempSensor(SunriliveSensorBase):
     """溫度 sensor."""
 
-    _attr_device_class = SensorDeviceClass.TEMPERATURE
-    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_name = "Temperature"
-
-    @property
-    def unique_id(self) -> str:
-        address = self.coordinator.address
-        return f"{uid_from_mac(address)}_temp"
+    def __init__(
+        self,
+        processor: PassiveBluetoothDataUpdateCoordinator,
+        entity_key: dict[str, Any],
+        description: SensorEntityDescription,
+    ) -> None:
+        super().__init__(processor, entity_key, description)
 
     @callback
     def _async_update_from_bluetooth(self) -> None:
@@ -136,15 +152,13 @@ class TempSensor(SunriliveSensorBase):
 class HumidSensor(SunriliveSensorBase):
     """濕度 sensor."""
 
-    _attr_device_class = SensorDeviceClass.HUMIDITY
-    _attr_native_unit_of_measurement = PERCENTAGE
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_name = "Humidity"
-
-    @property
-    def unique_id(self) -> str:
-        address = self.coordinator.address
-        return f"{uid_from_mac(address)}_humidity"
+    def __init__(
+        self,
+        processor: PassiveBluetoothDataUpdateCoordinator,
+        entity_key: dict[str, Any],
+        description: SensorEntityDescription,
+    ) -> None:
+        super().__init__(processor, entity_key, description)
 
     @callback
     def _async_update_from_bluetooth(self) -> None:
@@ -158,13 +172,16 @@ def _async_add_entity(
     async_add_entities: AddEntitiesCallback,
     address: str,
 ) -> None:
-    """在 address 上新增 temp / humid sensor."""
+    """在 address 上新增 temp / humid sensor。"""
     coord = SunriliveBleDataUpdateCoordinator(hass, address)
+
+    temp_key = {"key": "temperature", "address": address}
+    humid_key = {"key": "humidity", "address": address}
 
     async_add_entities(
         [
-            TempSensor(coord),
-            HumidSensor(coord),
+            TempSensor(coord, temp_key, TEMPERATURE_SENSOR),
+            HumidSensor(coord, humid_key, HUMIDITY_SENSOR),
         ]
     )
 
