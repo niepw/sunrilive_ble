@@ -107,8 +107,7 @@ class HumidSensor(SunriliveBLESensor):
         self._push_update()
 
 
-@callback
-def async_setup_entry(
+async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
@@ -149,7 +148,7 @@ def async_setup_entry(
         """處理 BLE 廣播，更新實體數值。"""
         # manufacturer_data 是 dict[int, bytes]
         # key = company ID (int)，value = payload bytes（不是物件）
-        mfg_data = service_info.advertisement_data.manufacturer_data
+        mfg_data = service_info.advertisement.manufacturer_data
         if not mfg_data:
             return
 
