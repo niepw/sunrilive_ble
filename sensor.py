@@ -6,10 +6,8 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
-from homeassistant.components.bluetooth.passive_update_processor import (
-    PassiveBluetoothDataUpdateCoordinator,
-    PassiveBluetoothProcessorEntity,
-)
+from homeassistant.components.bluetooth.passive_update_processor import PassiveBluetoothProcessorEntity
+from homeassistant.components.bluetooth.passive_update_coordinator import PassiveBluetoothDataUpdateCoordinator
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
