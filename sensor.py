@@ -23,7 +23,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers import device_registry as dr
 
-from .const import DOMAIN, MANUFACTURER, MODEL, uid_from_mac
+from .const import DOMAIN, MANUFACTURER, MODEL, CONF_MANUAL_MACS, uid_from_mac
 from .__init__ import SunriliveBleRuntimeData
 
 if TYPE_CHECKING:
