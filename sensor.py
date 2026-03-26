@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.bluetooth import (
+    BluetoothScanningMode,
     BluetoothServiceInfoBleak,
     async_register_callback,
 )
@@ -181,5 +182,6 @@ def async_setup_entry(
             hass,
             _ble_callback,
             {},
+            BluetoothScanningMode.PASSIVE,
         )
     )
