@@ -3,213 +3,107 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.bluetooth import (
     BluetoothServiceInfoBleak,
     async_register_callback,
 )
-from homeassistant.components.bluetooth.passive_update_processor import PassiveBluetoothProcessorEntity
-from homeassistant.components.bluetooth.passive_update_coordinator import PassiveBluetoothDataUpdateCoordinator
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
-    SensorEntityDescription,
 )
-from homeassistant.const import (
-    PERCENTAGE,
-    EntityCategory,
-    UnitOfTemperature,
-)
-from homeassistant.core import HomeAssistant, callback, Event
+from homeassistant.const import PERCENTAGE, UnitOfTemperature
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.typing import ConfigType
 
-from .const import DOMAIN, MANUFACTURER, MODEL, CONF_MANUAL_MACS, uid_from_mac
-from .__init__ import SunriliveBleRuntimeData
+from .const import CONF_MANUAL_MACS, DOMAIN, MANUFACTURER, MODEL, uid_from_mac
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
-    from .__init__ import SunriliveBleRuntimeData
 
 _LOGGER = logging.getLogger(__name__)
 
-TEMPERATURE_SENSOR = SensorEntityDescription(
-    key="temperature",
-    device_class=SensorDeviceClass.TEMPERATURE,
-    native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-    state_class=SensorStateClass.MEASUREMENT,
-    name="Temperature",
-)
 
-HUMIDITY_SENSOR = SensorEntityDescription(
-    key="humidity",
-    device_class=SensorDeviceClass.HUMIDITY,
-    native_unit_of_measurement=PERCENTAGE,
-    state_class=SensorStateClass.MEASUREMENT,
-    name="Humidity",
-)
+def _parse_manufacturer_payload(payload: bytes) -> tuple[float, int] | None:
+    """解析 Sunrilive manufacturer payload（已去除 company ID 的部分）。
+    
+    格式：[01][09][TT_hi][TT_lo][HH][MAC 6 bytes] = 共 11 bytes
+    """
+    if len(payload) < 5:
+        return None
+    if payload[0:2] != bytes([0x01, 0x09]):
+        return None
 
-UPDATE_INTERVAL = 60  # seconds, 這個只是示意，實際上我們是被廣播觸發更新的，不需要定時器
+    temp_raw = (payload[2] << 8) | payload[3]
+    humid_raw = payload[4]
+    temp_c = temp_raw / 10.0
+    return temp_c, humid_raw
 
 
-def _parse_adv(data: bytes) -> tuple[float | None, int | None] | None:
-    """解析 Sunrilive ADV data，回傳 (temp_c, humid_pct) 或 None."""
-    pos = 0
-    while pos + 2 <= len(data):
-        ad_len = data[pos]
-        ad_type = data[pos + 1]
-        ad_val = data[pos + 2 : pos + 2 + ad_len]
-        pos += 2 + ad_len
+class SunriliveBLESensor(SensorEntity):
+    """Base Sunrilive BLE sensor."""
 
-        if (
-            ad_type == 0xFF
-            and len(ad_val) >= 11
-            and ad_val[0:2] == bytes([0x01, 0x09])
-        ):
-            # 01 09 TT HH mm:mac
-            temp_raw = (ad_val[2] << 8) | ad_val[3]  # big-endian
-            humid_raw = ad_val[4]
+    _attr_has_entity_name = True
+    _attr_should_poll = False
 
-            temp_c = temp_raw / 10.0
-            humid_pct = humid_raw
-
-            return temp_c, humid_pct
-
-    return None
-
-
-# 你不再繼承 PassiveBluetoothDataUpdateCoordinator，而是用它
-class SunriliveBleDataUpdateCoordinator:
-    """wrapper for PassiveBluetoothDataUpdateCoordinator，儲存額外的 _last_temp / _last_humid."""
-
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        address: str,
-    ) -> None:
-        self._inner = PassiveBluetoothDataUpdateCoordinator(
-            hass=hass,
-            logger=_LOGGER,
-            address=address,
-            mode="passive",
+    def __init__(self, address: str) -> None:
+        self._address = address
+        self._uid = uid_from_mac(address)
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, self._uid)},
+            name=MODEL,
+            manufacturer=MANUFACTURER,
+            model=MODEL,
         )
 
-        # 你會在 _async_handle_bluetooth_event 裡更新這兩個
-        self._last_temp: float | None = None
-        self._last_humid: int | None = None
-
-    @property
-    def address(self) -> str:
-        return self._inner.address
-
     @callback
-    def _async_handle_bluetooth_event(
-        self,
-        service_info: BluetoothServiceInfoBleak,
-        change: str,
-    ) -> None:
-        """處理廣播事件。"""
-        mfg_data = service_info.advertisement_data.manufacturer_data
-        if not mfg_data:
-            return
+    def _handle_update(self, temp: float | None, humid: int | None) -> None:
+        raise NotImplementedError
 
-        for _cid, data in mfg_data.items():
-            parsed = _parse_adv(data.data)
-            if not parsed:
-                continue
-
-            temp_c, humid_pct = parsed
-            self._last_temp = temp_c
-            self._last_humid = humid_pct
-            self._inner._async_update_listeners()
-            break
-
-    def __getattr__(self, name):
-        return getattr(self._inner, name)
+    def _push_update(self) -> None:
+        self.async_write_ha_state()
 
 
-class SunriliveSensorBase(PassiveBluetoothProcessorEntity, SensorEntity):
-    """Base class for Sunrilive sensors."""
-
-    _attr_attribution = "Data from Sunrilive BLE sensor"
-    _attr_has_entity_name = True
-
-
-class TempSensor(SunriliveSensorBase):
+class TempSensor(SunriliveBLESensor):
     """溫度 sensor."""
 
-    def __init__(
-        self,
-        processor: SunriliveBleDataUpdateCoordinator,
-        entity_key: dict[str, Any],
-        description: SensorEntityDescription,
-    ) -> None:
-        super().__init__(processor._inner, entity_key, description)
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_name = "Temperature"
+
+    def __init__(self, address: str) -> None:
+        super().__init__(address)
+        self._attr_unique_id = f"{self._uid}_temp"
+        self._attr_native_value: float | None = None
 
     @callback
-    def _async_update_from_bluetooth(self) -> None:
-        self._attr_native_value = self.coordinator._last_temp
+    def _handle_update(self, temp: float | None, humid: int | None) -> None:
+        self._attr_native_value = temp
+        self._push_update()
 
 
-class HumidSensor(SunriliveSensorBase):
+class HumidSensor(SunriliveBLESensor):
     """濕度 sensor."""
 
-    def __init__(
-        self,
-        processor: SunriliveBleDataUpdateCoordinator,
-        entity_key: dict[str, Any],
-        description: SensorEntityDescription,
-    ) -> None:
-        super().__init__(processor._inner, entity_key, description)
+    _attr_device_class = SensorDeviceClass.HUMIDITY
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_name = "Humidity"
+
+    def __init__(self, address: str) -> None:
+        super().__init__(address)
+        self._attr_unique_id = f"{self._uid}_humidity"
+        self._attr_native_value: int | None = None
 
     @callback
-    def _async_update_from_bluetooth(self) -> None:
-        self._attr_native_value = self.coordinator._last_humid
-
-
-@callback
-def _async_add_entity(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
-    address: str,
-) -> None:
-    """在 address 上新增 temp / humid sensor。"""
-    coord = SunriliveBleDataUpdateCoordinator(hass, address)
-
-    # Override 一下 _handle_bluetooth_event
-    def _inner_handle(info, change):
-        coord._async_handle_bluetooth_event(info, change)
-    coord._inner._async_handle_bluetooth_event = _inner_handle
-
-    temp_key = {"key": "temperature", "address": address}
-    humid_key = {"key": "humidity", "address": address}
-
-    async_add_entities(
-        [
-            TempSensor(coord, temp_key, TEMPERATURE_SENSOR),
-            HumidSensor(coord, humid_key, HUMIDITY_SENSOR),
-        ]
-    )
-
-
-@callback
-def _async_device_registered(hass: HomeAssistant, entry: ConfigEntry, address: str) -> None:
-    """在 device_registry 裡註冊這台 Sunrilive sensor。"""
-    dev_reg = dr.async_get(hass)
-    dev_reg.async_get_or_create(
-        config_entry_id=entry.entry_id,
-        identifiers={("sunrilive_ble", address)},
-        name=MODEL,
-        manufacturer=MANUFACTURER,
-        model=MODEL,
-        via_device=(DOMAIN, entry.entry_id),
-    )
+    def _handle_update(self, temp: float | None, humid: int | None) -> None:
+        self._attr_native_value = humid
+        self._push_update()
 
 
 @callback
@@ -218,35 +112,74 @@ def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Setup callback from HA."""
+    """Setup sensor platform."""
     manual_macs = entry.data.get(CONF_MANUAL_MACS, [])
+    tracked: dict[str, list[SunriliveBLESensor]] = {}
 
-    # 1. 手動輸入的 MAC
-    for addr in manual_macs:
-        addr = addr.upper()
-        _async_device_registered(hass, entry, addr)
-        _async_add_entity(hass, entry, async_add_entities, addr)
+    def _register_device(address: str) -> None:
+        dev_reg = dr.async_get(hass)
+        dev_reg.async_get_or_create(
+            config_entry_id=entry.entry_id,
+            identifiers={(DOMAIN, uid_from_mac(address))},
+            name=MODEL,
+            manufacturer=MANUFACTURER,
+            model=MODEL,
+        )
 
-    # 2. 自動發現：只要在 manufacturer_data 裡看到 01 09 的，就把它的 address 加進來
+    def _add_address(address: str) -> None:
+        if address in tracked:
+            return
+        _register_device(address)
+        temp = TempSensor(address)
+        humid = HumidSensor(address)
+        tracked[address] = [temp, humid]
+        async_add_entities([temp, humid])
+        _LOGGER.debug("Added Sunrilive BLE sensor: %s", address)
+
+    # 1. 先加手動輸入的 MAC
+    for mac in manual_macs:
+        _add_address(mac.upper())
+
     @callback
-    def _handle_discovery_for_new_devices(info: BluetoothServiceInfoBleak) -> None:
-        mfg_data = info.advertisement_data.manufacturer_data
+    def _ble_callback(
+        service_info: BluetoothServiceInfoBleak,
+        change: str,
+    ) -> None:
+        """處理 BLE 廣播，更新實體數值。"""
+        # manufacturer_data 是 dict[int, bytes]
+        # key = company ID (int)，value = payload bytes（不是物件）
+        mfg_data = service_info.advertisement_data.manufacturer_data
         if not mfg_data:
             return
 
-        for _cid, data in mfg_data.items():
-            # 0x01 0x09 開頭代表 Sunrilive 風格
-            if len(data.data) >= 11 and data.data[0:2] == bytes([0x01, 0x09]):
-                addr = info.address.upper()
-                if addr not in hass.data[DOMAIN].get("entities_per_mac", []):
-                    hass.data[DOMAIN].setdefault("entities_per_mac", set()).add(addr)
-                    _async_device_registered(hass, entry, addr)
-                    _async_add_entity(hass, entry, async_add_entities, addr)
-                break
+        for _company_id, payload in mfg_data.items():
+            # payload 直接是 bytes，不需要 .data
+            parsed = _parse_manufacturer_payload(payload)
+            if not parsed:
+                continue
 
-    # 註冊這個 callback，讓 自動發現 產生實體
-    async_register_callback(
-        hass,
-        _handle_discovery_for_new_devices,
-        {},
+            temp_c, humid_pct = parsed
+            addr = service_info.address.upper()
+
+            _LOGGER.debug(
+                "Sunrilive BLE [%s] temp=%.1f humid=%d",
+                addr, temp_c, humid_pct,
+            )
+
+            # 2. 自動發現：新裝置自動加入
+            if addr not in tracked:
+                _add_address(addr)
+
+            # 3. 推送更新到實體
+            for entity in tracked.get(addr, []):
+                entity._handle_update(temp_c, humid_pct)
+            break
+
+    # 4. 用 entry.async_on_unload 確保 HA unload 時自動取消 callback
+    entry.async_on_unload(
+        async_register_callback(
+            hass,
+            _ble_callback,
+            {},
+        )
     )
