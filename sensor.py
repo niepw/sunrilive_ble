@@ -72,7 +72,6 @@ class SunriliveBleDataUpdateCoordinator(PassiveBluetoothDataUpdateCoordinator):
             hass=hass,
             logger=_LOGGER,
             address=address,
-            device_type=None,
         )
         self._address = address
         self._config_entry = config_entry
