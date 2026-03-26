@@ -5,10 +5,7 @@ import logging  # 這個一定要加
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.components.bluetooth import (
-    BluetoothServiceInfoBleak,
-    BluetoothScanningMode,
-)
+from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
 from homeassistant.components.bluetooth.passive_update_processor import PassiveBluetoothProcessorEntity
 from homeassistant.components.bluetooth.passive_update_coordinator import PassiveBluetoothDataUpdateCoordinator
 from homeassistant.components.sensor import (
@@ -68,9 +65,8 @@ class SunriliveBleDataUpdateCoordinator(PassiveBluetoothDataUpdateCoordinator):
         self,
         hass: HomeAssistant,
         address: str,
-        mode=BluetoothScanningMode.ACTIVE,
-        config_entry: ConfigEntry,
-        entry_data: SunriliveBleRuntimeData,
+        config_entry: ConfigEntry | None = None,
+        entry_data: SunriliveBleRuntimeData | None = None,
     ) -> None:
         super().__init__(
             hass=hass,
